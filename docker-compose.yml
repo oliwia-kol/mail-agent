@@ -1,0 +1,47 @@
+services:
+  ollama:
+    image: ollama/ollama:0.40.4
+    volumes:
+      - model-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  model-init:
+    image: ollama/ollama:0.40.4
+    entrypoint: /bin/sh
+    command: ["-c", "ollama pull \"$$MAIL_AGENT_MODEL\""]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      MAIL_AGENT_MODEL: ${MAIL_AGENT_MODEL:-gemma4:12b-it-q4_K_M}
+    depends_on:
+      ollama:
+        condition: service_healthy
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports:
+      - "127.0.0.1:${MAIL_AGENT_MAILPIT_PORT:-8025}:8025"
+  api:
+    build: .
+    environment:
+      MAIL_AGENT_OLLAMA_URL: http://ollama:11434
+      MAIL_AGENT_MODEL: ${MAIL_AGENT_MODEL:-gemma4:12b-it-q4_K_M}
+      MAIL_AGENT_SMTP_HOST: mailpit
+    ports:
+      - "127.0.0.1:${MAIL_AGENT_API_PORT:-8000}:8000"
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+volumes:
+  model-data:
