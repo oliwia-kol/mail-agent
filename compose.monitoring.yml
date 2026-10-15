@@ -1,4 +1,4 @@
-# Lokalny Langfuse v4; układ usług według oficjalnego Docker Compose.
+# Lokalny Langfuse v4 na podstawie oficjalnego przykładu Docker Compose.
 x-langfuse-env: &langfuse-env
   DATABASE_URL: postgresql://postgres:${LF_DB_PASSWORD:?Uruchom scripts/configure_monitoring.py}@lf-postgres:5432/postgres
   SALT: ${LF_SALT:?Brak LF_SALT}
@@ -45,7 +45,7 @@ services:
       MAIL_AGENT_LANGFUSE_URL: http://langfuse-web:3000
       MAIL_AGENT_LANGFUSE_PUBLIC_KEY: ${LF_PUBLIC_KEY:?Brak LF_PUBLIC_KEY}
       MAIL_AGENT_LANGFUSE_SECRET_KEY: ${LF_SECRET_KEY:?Brak LF_SECRET_KEY}
-      # Profil demonstracyjny: wyłącznie zgłoszenia syntetyczne.
+      # Używaj tylko wymyślonych wiadomości testowych.
       MAIL_AGENT_LANGFUSE_CAPTURE_CONTENT: "true"
   langfuse-web:
     image: docker.langfuse.com/langfuse/langfuse:4@sha256:48ecae32cd74d3a567588602c144de0ec626daf32dc5f2e831a03cebd0bb2d34

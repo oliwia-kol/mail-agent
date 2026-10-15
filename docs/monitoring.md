@@ -1,56 +1,70 @@
-# Lokalny monitoring Langfuse
+# Jak sprawdzić obsługę wiadomości w Langfuse
 
-Langfuse pokazuje przebieg obsługi wiadomości: wejście, wywołanie modelu,
-narzędzie, wynik, czas i błędy. Działa lokalnie i jest opcjonalny.
+Langfuse zapisuje kolejne etapy obsługi wiadomości. Pozwala zobaczyć, co
+zwrócił model, jakie narzędzie zostało wywołane i ile trwała wysyłka.
+Działa lokalnie. Podstawowa wersja programu uruchamia się bez niego.
 
-## Uruchomienie
+## Włączenie
 
-Oprócz Dockera potrzebny jest Python 3 do jednorazowego wygenerowania haseł:
+Do utworzenia haseł potrzebny jest Python 3. Uruchom w katalogu projektu:
 
 ```sh
 python3 scripts/configure_monitoring.py
 docker compose --env-file .env.langfuse -f docker-compose.yml -f compose.monitoring.yml up -d --build
 ```
 
-Panel: [localhost:3000](http://localhost:3000). Konto: `operator@example.com`.
-Hasło odczytasz z pola `LF_ADMIN_PASSWORD` w lokalnym `.env.langfuse`.
-Skrypt nie nadpisuje istniejącego pliku. Nie udostępniaj tego pliku ani nie
-przenoś kluczy do kodu. Git i Docker wykluczają go z publikacji.
+Skrypt zapisze losowe hasła i klucze w `.env.langfuse`. Jeśli ten plik już
+istnieje, zachowa go bez zmian. Plik jest wykluczony z Git i obrazu aplikacji;
+zostaw go na swoim komputerze.
 
-Pierwszy start inicjalizuje PostgreSQL, ClickHouse, Redis i MinIO.
-Panel i proces worker korzystają z tych usług; gotowość API nie oznacza
-jeszcze gotowości panelu. Układ bazuje na [oficjalnym Compose Langfuse](https://langfuse.com/self-hosting/deployment/docker-compose).
+Otwórz [panel Langfuse](http://localhost:3000). Zaloguj się jako
+`operator@example.com`, używając hasła z pola `LF_ADMIN_PASSWORD`
+w `.env.langfuse`.
 
-## Odczyt przykładu
+Pierwszy start może potrwać dłużej, ponieważ Langfuse przygotowuje własne
+bazy i magazyn danych: PostgreSQL, ClickHouse, Redis i MinIO. Oprócz panelu
+uruchamia proces przetwarzający zapisane zdarzenia. Usługi są skonfigurowane
+według [oficjalnego przykładu](https://langfuse.com/self-hosting/deployment/docker-compose).
+API może już odpowiadać, kiedy panel Langfuse jeszcze się uruchamia.
 
-Wyślij zapytanie z README i otwórz projekt Mail Agent PoC w panelu.
-W widoku śladów odszukaj obsługę po `request_id` z odpowiedzi API, zapisanym
-w metadanych. Ślad zawiera:
+## Gdzie znaleźć wiadomość
 
-- `route-request` — całą obsługę zapytania;
-- `ollama-routing` — model, wersję instrukcji, argumenty wywołania i liczbę tokenów;
-- `send_email` — odbiorcę i potwierdzenie SMTP.
+Wyślij zapytanie z README. W panelu otwórz projekt **Mail Agent PoC**
+i widok śladów wykonania. Każdy ślad to zapis obsługi jednego zapytania.
+Odszukaj `request_id` z odpowiedzi API w metadanych śladu.
 
-Błędy są oznaczane przy etapie, w którym wystąpiły. Zapis jest asynchroniczny,
-więc ślad może pojawić się z opóźnieniem. Pełny zestaw usług zatrzymasz przez:
+W środku są trzy etapy:
+
+- `route-request` — przyjęcie zapytania i wynik całej obsługi;
+- `ollama-routing` — wywołanie modelu, jego ustawienia, wynik i liczba tokenów;
+- `send_email` — wybrany odbiorca i potwierdzenie przyjęcia maila przez SMTP.
+
+Przy każdym etapie widać czas, a w razie błędu także jego oznaczenie.
+Zapis odbywa się w tle, więc wiadomość może pojawić się w panelu z opóźnieniem.
+
+Aby zatrzymać aplikację razem z monitoringiem, użyj:
 
 ```sh
 docker compose --env-file .env.langfuse -f docker-compose.yml -f compose.monitoring.yml stop
 ```
 
-## Dane i ocena
+## Jakie dane są zapisywane
 
-Profil demonstracyjny zapisuje treść zgłoszenia i instrukcję modelu.
-Używaj danych syntetycznych. Pole adresu nadawcy jest maskowane, ale dane
-wpisane w treść nie są automatycznie anonimizowane. Ukryte rozumowanie modelu
-nie jest rejestrowane.
+Ta konfiguracja zapisuje treść zgłoszenia i instrukcję modelu, dlatego
+używaj wymyślonych wiadomości testowych. Adres z pola `email` jest ukryty
+w zapisie, ale dane osobowe wpisane w treść pozostają widoczne. Ukrytego
+rozumowania modelu nie zapisujemy.
 
-Sam ślad nie mówi, czy dział wybrano prawidłowo. Funkcja `record_scores`
-pozwala zapisać wynik porównania z odpowiedzią referencyjną. Zwykłe zapytania
-API nie mają takiej referencji, więc nie otrzymują automatycznej oceny jakości.
-Zestawy i skrypty wcześniejszej oceny nie są częścią tego repozytorium;
-[opis metody i wyników](model-comparison.md) zawiera zakres pomiaru.
+Langfuse pokazuje wykonane czynności, ale sam nie wie, czy wybrany dział
+jest prawidłowy. Funkcja `record_scores` pozwala dopisać wynik porównania
+z oczekiwanym odbiorcą. Zwykłe zapytanie nie zawiera oczekiwanego odbiorcy,
+więc API nie wystawia mu automatycznie oceny jakości.
 
-Sprawdzono zapis i odczyt śladów oraz ocen w Langfuse 4.59.0 z SDK 5.0.1.
-Awaria monitoringu nie ponawia SMTP i nie blokuje wysyłki. Integracja nie ma
-trwałej kolejki, więc nie gwarantuje odzyskania niezapisanych śladów po awarii.
+Zestawy wiadomości i skrypty użyte do wcześniejszych pomiarów nie są
+udostępnione w repozytorium. [Opis testów i wyników](model-comparison.md)
+wyjaśnia, co sprawdzano.
+
+Zapis i odczyt danych sprawdzono na Langfuse 4.59.0 z SDK 5.0.1.
+Jeśli monitoring przestanie działać, program nadal może wysłać mail.
+Niezapisane ślady mogą jednak zaginąć, ponieważ aplikacja nie ma trwałej
+kolejki oczekującej na ich ponowne przesłanie.

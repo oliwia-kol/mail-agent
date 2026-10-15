@@ -1,32 +1,40 @@
-# Wybór modelu do routingu wiadomości
+# Porównanie modeli
 
-Pomiar: 15 października 2026. Wybrano **Gemma4 12B GGUF Q4_K_M**
-(`gemma4:12b-it-q4_K_M`) na podstawie lokalnego porównania routingu i odporności.
-Model działa przez Ollamę i wywołuje narzędzie LangChain wysyłające e-mail.
+Do programu wybrano **Gemmę4 12B GGUF Q4_K_M** (`gemma4:12b-it-q4_K_M`).
+W lokalnym teście poprawnie wybrała dział i użyła funkcji wysyłki we wszystkich
+sprawdzanych przypadkach. Następnie przeszła osobny test 150 nowych wiadomości
+z wynikiem 147 poprawnych przekazań. Pomiary wykonano 15 października 2026.
 
-## Metoda
+## Jak porównano modele
 
-Każda konfiguracja otrzymała te same 35 polskich zgłoszeń roboczych, po 7 na
-dział, oraz 20 osobnych wariantów manipulacji instrukcjami. Warianty ataków
-powstały z pięciu zatwierdzonych spraw. Referencje zatwierdzono przez człowieka;
-nie były odpowiedziami modelu ocenianego. Scenariusze są syntetyczne lub
-przetworzone z publicznych źródeł i nie stanowią losowej poczty realnej firmy.
-Oczekiwania prób manipulacji zaakceptowano po diagnostyce, bez zmiany etykiet.
+Każdy model dostał te same 35 polskich zgłoszeń, po 7 na dział. Dodatkowe
+20 prób zawierało polecenia mające nakłonić model do złamania zasad. Te próby
+powstały na podstawie pięciu zgłoszeń ze znanym odbiorcą.
 
-Użyto wspólnej instrukcji `routing-v2-zero-shot`, bez demonstracji i fine-tuningu.
-Ustawienia: temperatura 0, wyłączone rozumowanie, kontekst 8192, limit generacji
-512 tokenów, timeout modelu 120 s. Instrukcję wcześniej poprawiono na danych
-roboczych; jest to pomiar doboru konfiguracji, nie niezależna walidacja końcowa.
+Oczekiwanych odbiorców sprawdził człowiek. Oczekiwania dla prób manipulacji
+zatwierdzono po próbnym uruchomieniu, bez zmiany etykiet. Wiadomości wymyślono
+na potrzeby projektu lub opracowano na podstawie publicznych zbiorów.
+Nie były losową próbką poczty firmowej.
 
-Przepływ pomiaru: klient testowy FastAPI → rzeczywista Ollama → wywołanie narzędzia →
-wykonanie funkcji → rzeczywisty lokalny SMTP aiosmtpd. Sprawdzano dział,
-liczbę wiadomości, treść, Reply-To i powiązanie maila z requestem. Brak wywołania,
-błędne argumenty i błędny dział pozostawały w mianowniku. Nie zastępowano
-wywołania narzędzia odczytaniem adresu ze zwykłej odpowiedzi tekstowej.
+Modele dostały tę samą instrukcję `routing-v2-zero-shot`, bez przykładów.
+Nie były dodatkowo trenowane. Ustawienia: temperatura 0, wyłączony tryb
+rozumowania, kontekst 8192 tokeny, odpowiedź do 512 tokenów i czas oczekiwania
+120 s. Instrukcję wcześniej poprawiano na tych danych, więc wyniki służyły
+do wyboru modelu, a nie do niezależnej oceny gotowego rozwiązania.
 
-## Wyniki
+Zapytania przechodziły przez klienta testowego FastAPI, prawdziwy model
+w Ollamie, funkcję wysyłki i lokalny serwer SMTP aiosmtpd.
+Aby zaliczyć próbę, model musiał wywołać narzędzie, a serwer otrzymać dokładnie
+jeden mail do oczekiwanego działu, z właściwą treścią i `Reply-To`.
+Błędy wywołania i błędne adresowanie pozostawały w wyniku.
 
-| Konfiguracja | Pełny sukces: zgłoszenia | Poprawne wywołanie: zgłoszenia | Pełny sukces: manipulacje | Poprawne wywołanie: manipulacje | Mediana zwykłego requestu |
+## Wyniki porównania
+
+Kolumny „Zgłoszenia” i „Próby manipulacji” pokazują liczbę zaliczonych prób.
+„Wywołania” oznaczają samą poprawność funkcji i jej argumentów, niezależnie
+od tego, czy wybrany dział był właściwy.
+
+| Model | Zgłoszenia | Wywołania dla zgłoszeń | Próby manipulacji | Wywołania dla manipulacji | Mediana czasu |
 |---|---:|---:|---:|---:|---:|
 | Qwen3.5 9B Q4_K_M | 34/35 | 35/35 | 15/20 | 20/20 | 6,54 s |
 | Bielik 11B v3 Q4_K_M | 35/35 | 35/35 | 14/20 | 18/20 | 2,72 s |
@@ -34,54 +42,57 @@ wywołania narzędzia odczytaniem adresu ze zwykłej odpowiedzi tekstowej.
 | Gemma4 12B MLX NVFP4 | 35/35 | 35/35 | 20/20 | 20/20 | 1,26 s |
 | **Gemma4 12B GGUF Q4_K_M** | **35/35** | **35/35** | **20/20** | **20/20** | **1,31 s** |
 
-Łącznie: 275 requestów w pięciu konfiguracjach czterech rodzin. Nie są to
-275 niezależne sprawy. We wszystkich wysłanych wiadomościach zachowano
-poprawne nagłówki i treść. Niepoprawne lub wielokrotne wywołania blokowano przed
-SMTP. Wysłanie do złego dozwolonego działu nadal było błędem pełnego zadania.
+Łącznie wykonano 275 prób: ten sam zestaw 55 wiadomości dla pięciu
+konfiguracji z czterech rodzin modeli. Nie było to 275 różnych spraw.
+W wysłanych mailach zachowano treść i nagłówki. Kod blokował błędne lub
+wielokrotne wywołania przed połączeniem z SMTP. Mail do niewłaściwego działu
+był błędem, nawet jeśli jego wysyłka przebiegła poprawnie.
 
-## Uzasadnienie wyboru i ograniczenia
+Czas obejmuje obsługę zapytania, odpowiedź modelu i wysyłkę. Mediana to
+środkowa wartość zmierzonych czasów. W tabeli dotyczy zwykłych zgłoszeń.
 
-Gemma uzyskała komplet poprawnych wyników w obu pulach, również w osobno
-sprawdzonym GGUF, który wybrano do dalszej integracji kontenerowej. Nie było
-potrzeby dodawania przykładów do promptu ani dostrajania wag.
+## Dlaczego Gemma
 
-Wyniki Bielika zależały od instrukcji i dystrybucji: słabszy wynik wcześniejszej
-konfiguracji nie oznacza niezdolności całej rodziny do używania narzędzi.
-Zachowanie modelu i zabezpieczenia kodu oceniano osobno; sama poprawność
-schematu nie zapobiega skierowaniu do niewłaściwego działu.
+Oba warianty Gemmy zaliczyły wszystkie próby. Do kontenerów wybrano wariant
+GGUF, który sprawdzono osobno. Wyniki nie uzasadniały dodawania przykładów
+do instrukcji ani dodatkowego trenowania modelu.
 
-Sprzęt pomiarowy: Apple M4, 24 GB. Ollama 0.40.4, Python 3.14.3,
-langchain-ollama 1.1.0, langchain-core 1.6.10, klient ollama 0.6.3,
-FastAPI 0.143.2. Modele uruchamiano kolejno. Mediana obejmuje request, model
-i SMTP, nie tylko generację. MLX i GGUF różnią się backendem i kwantyzacją.
+Bielik radził sobie ze zwykłymi zgłoszeniami, ale częściej mylił się przy
+manipulacjach. Wyniki zależały także od instrukcji i wybranej wersji modelu;
+nie opisują możliwości wszystkich modeli z tej rodziny.
 
-Sto procent dotyczy opisanej próby roboczej, nie dowolnej wiadomości lub ataku.
-Tabela opisuje pomiar na hoście; sprawdzenie kontenerów opisano osobno poniżej.
+Porównanie wykonano na Macu M4 z 24 GB RAM. Wersje: Ollama 0.40.4,
+Python 3.14.3, langchain-ollama 1.1.0, langchain-core 1.6.10,
+klient ollama 0.6.3 i FastAPI 0.143.2. Modele uruchamiano kolejno.
+Warianty MLX i GGUF korzystały z innych sposobów uruchamiania i kwantyzacji,
+czyli zmniejszenia precyzji zapisu wag modelu.
 
-## Sprawdzenie kontenerów
+## Sprawdzenie w kontenerach
 
-Wybraną Gemmę GGUF uruchomiono również przez Docker Compose: sieciowe API,
-Ollama w kontenerze, prawdziwe narzędzie i Mailpit. Pięć zwykłych zgłoszeń,
-po jednym na dział, oraz te same 20 zatwierdzonych manipulacji zakończyły się
-poprawnym mailem: 5/5 i 20/20. Sprawdzono treść, odbiorcę, Reply-To,
-jedną wiadomość na request i ślady trzech etapów w lokalnym Langfuse.
+Wybraną Gemmę uruchomiono w Docker Compose razem z API i Mailpit.
+Pięć zwykłych zgłoszeń, po jednym na dział, i te same 20 prób manipulacji
+zakończyły się poprawną wysyłką. Sprawdzono jednego odbiorcę, treść,
+`Reply-To` oraz zapis etapów obsługi w lokalnym Langfuse.
 
-Środowisko: linux/arm64 w Docker Desktop na Macu M4, 16 GB dla Dockera,
-Ollama 0.40.4, Python 3.14.8, obliczenia na CPU. Pierwszy request z ładowaniem
-modelu: 59,20 s. Mediana pięciu kolejnych zgłoszeń z monitoringiem: 4,46 s;
-mediana 20 manipulacji: 6,85 s. Nie jest to porównawczy pomiar narzutu Langfuse.
-Ta kontrola integracji ponownie używa danych roboczych i nie zwiększa liczby
-niezależnych przykładów ani nie zastępuje końcowego testu.
+Kontenery działały jako linux/arm64 na Macu M4, z 16 GB RAM dla Dockera.
+Ollama 0.40.4 korzystała z CPU, a API z Pythona 3.14.8.
+Pierwsza odpowiedź, razem z ładowaniem modelu, zajęła 59,20 s.
+Mediana kolejnych pięciu zgłoszeń z monitoringiem wyniosła 4,46 s,
+a 20 prób manipulacji 6,85 s. Nie mierzono osobno czasu dodanego przez Langfuse.
+Ponownie użyto wcześniejszych wiadomości; nie był to nowy zestaw testowy.
 
-## Osobny test 150 nowych zgłoszeń
+## Test 150 nowych wiadomości
 
-Po wyborze modelu przygotowano 150 nowych polskich zgłoszeń syntetycznych,
-po 30 na dział: 20 typowych, 7 granicznych i 3 utrudnione językowo lub
-kontekstem. Treści i referencje opracował oraz skontrolował Codex, bez
-niezależnego przeglądu człowieka. Oceniana Gemma nie ustalała etykiet.
-Dane, prompt i konfigurację zamrożono przed testem; nie zmieniano ich po wynikach.
+Po wyborze modelu przygotowano 150 nowych wiadomości po polsku, po 30 na
+dział: 20 typowych, 7 na granicy kategorii i 3 trudniejsze językowo lub
+kontekstowo. Treści i oczekiwanych odbiorców opracował oraz sprawdził Codex.
+Nie było niezależnego przeglądu przez człowieka. Oceniana Gemma nie ustalała,
+jakie odpowiedzi uznać za poprawne.
 
-| Dział | Pełny sukces |
+Przed testem zapisano stałą wersję danych, instrukcji i konfiguracji.
+Po obejrzeniu wyników nie zmieniano wiadomości ani oczekiwanych odbiorców.
+
+| Dział | Poprawnie przekazane wiadomości |
 |---|---:|
 | HR | 30/30 |
 | Kadry | 30/30 |
@@ -90,26 +101,40 @@ Dane, prompt i konfigurację zamrożono przed testem; nie zmieniano ich po wynik
 | Other | 28/30 |
 | Razem | **147/150 (98%)** |
 
-Każda próba przeszła sieciowe API, kontener Ollamy, rzeczywisty wywołanie narzędzia
-i Mailpit. Poprawność formatu wywołania, wykonania, oryginalnej treści i Reply-To:
-150/150. Odczytano trzy obserwacje każdego requestu i zapisano cztery wyniki
-oceny w Langfuse. Nie ponawiano automatycznie requestów.
+Każde zapytanie przeszło przez działające API, model w kontenerze, funkcję
+wysyłki i Mailpit. Wszystkie 150 wywołań miało poprawny format, a maile
+zachowały treść i `Reply-To`. Trzy miały niewłaściwego odbiorcę.
+Dla każdej próby odczytano trzy etapy obsługi i zapisano cztery wyniki oceny
+w Langfuse. Zapytania wysyłano po jednym razie, bez automatycznych powtórzeń.
 
-Trzy błędy wyboru działu pozostały w wyniku: fizyczny klucz i fotel biurowy
-trafiły do IT zamiast do other, a odebranie dostępów odchodzącemu pracownikowi
-do kadr zamiast do IT. To wynik względem przyjętej polityki i referencji AI.
+Pomyłki dotyczyły następujących spraw:
 
-Wcześniej ustalone progi PoC, 90% ogółem i 80% na dział, zostały spełnione.
-Mediana requestu: 4,505 s, p90: 5,954 s na CPU w opisanym środowisku.
-Zbiór powstał po wyborze modelu, ze znajomością wcześniejszych wyników,
-i nie jest losową pocztą firmy. 98% nie oznacza skuteczności produkcyjnej.
-To dodatkowy sprawdzian wybranej konfiguracji; innych modeli nie porównywano
-ponownie na tych 150 zgłoszeniach.
+- Klucz do magazynku trafił do IT; oczekiwano `other`.
+- Fotel biurowy trafił do IT; oczekiwano `other`.
+- Odebranie dostępów odchodzącemu pracownikowi trafiło do kadr; oczekiwano IT.
 
-Źródła techniczne: [Ollama — narzędzia](https://docs.ollama.com/capabilities/tool-calling),
-[LangChain — ChatOllama](https://docs.langchain.com/oss/python/integrations/chat/ollama),
-[Gemma4](https://ollama.com/library/gemma4),
-[Ministral3](https://ollama.com/library/ministral-3),
-[Bielik](https://ollama.com/SpeakLeash/bielik-11b-v3.0-instruct),
-[OWASP — prompt injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/).
-Źródła opisują integracje; wartości w tabeli pochodzą z lokalnych pomiarów.
+W tych odpowiedziach przyjęto, że IT zajmuje się sprzętem informatycznym,
+a nie całym wyposażeniem biura. Odebranie dostępów zinterpretowano jako
+administrację uprawnieniami do systemów, choć wiadomość nie nazywała ich
+wprost. To miejsca, w których granice działów wymagają szczególnej uwagi.
+
+Wynik przekroczył ustalone przed testem minimum: 90% ogółem i 80% w każdym
+dziale. Mediana czasu wyniosła 4,505 s, a 90% zapytań trwało nie dłużej niż
+5,954 s w opisanym środowisku CPU.
+
+Wiadomości przygotowano ze znajomością wcześniejszych wyników. To test
+wymyślonych scenariuszy z odpowiedziami opracowanymi przez AI, a nie pomiar
+skuteczności na poczcie rzeczywistej firmy. Pozostałych modeli nie sprawdzano
+na tych 150 przykładach. Wyniki 100% z wcześniejszej tabeli dotyczą tylko
+opisanych prób, a nie wszystkich możliwych wiadomości lub ataków.
+
+## Dokumentacja techniczna
+
+- [Wywoływanie narzędzi w Ollamie](https://docs.ollama.com/capabilities/tool-calling)
+- [ChatOllama w LangChain](https://docs.langchain.com/oss/python/integrations/chat/ollama)
+- [Gemma4](https://ollama.com/library/gemma4)
+- [Ministral3](https://ollama.com/library/ministral-3)
+- [Bielik](https://ollama.com/SpeakLeash/bielik-11b-v3.0-instruct)
+- [Próby manipulowania instrukcją modelu — OWASP](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
+
+Linki opisują modele i integracje. Liczby w tabelach pochodzą z testów projektu.

@@ -1,21 +1,17 @@
 # Mail Agent
 
-Lokalny router zgłoszeń pracowników. Przyjmuje adres nadawcy i treść wiadomości,
-a model językowy wybiera dział i wywołuje narzędzie wysyłające e-mail.
-Mail trafia do testowej skrzynki Mailpit. Nagłówek `Reply-To` wskazuje nadawcę.
+Program przyjmuje wiadomość od pracownika i przekazuje ją do odpowiedniego
+działu. Na przykład prośba o urlop trafia do kadr, a problem z logowaniem
+do help-desku. Odbiorcę wybiera lokalny model językowy, który wywołuje funkcję
+wysyłającą e-mail.
 
-Projekt pokazuje integrację FastAPI, LangChain, Ollamy i SMTP.
-Opcjonalny Langfuse pozwala prześledzić obsługę wiadomości.
+Maile można obejrzeć w testowej skrzynce Mailpit. Każdy zawiera oryginalną
+treść i adres nadawcy w nagłówku `Reply-To`, aby dział mógł mu odpowiedzieć.
 
 ## Uruchomienie
 
-Potrzebujesz działającego Dockera z aktualnym Docker Compose oraz internetu
-na czas pobierania obrazów i modelu. Nie trzeba instalować Pythona ani Ollamy
-na komputerze, zakładać konta u dostawcy modelu ani podawać kluczy API.
-
-Sprawdzone środowisko: Mac M4, 24 GB RAM, z przydziałem 16 GB dla Dockera.
-Ollama w tej konfiguracji działa na CPU. Same wagi modelu zajmują około 8 GB;
-obrazy kontenerów wymagają dodatkowego miejsca.
+Potrzebny jest Docker z aktualnym Docker Compose oraz internet do pobrania
+obrazów kontenerów i modelu. Podstawowe uruchomienie nie wymaga kluczy API.
 
 ```sh
 git clone https://github.com/oliwia-kol/mail-agent.git
@@ -23,22 +19,31 @@ cd mail-agent
 docker compose up -d
 ```
 
-Pierwszy start buduje API i automatycznie pobiera model. Poczekaj na gotowość:
+Compose sam zbuduje aplikację i pobierze model. Same pliki modelu zajmują
+około 8 GB; obrazy kontenerów potrzebują dodatkowego miejsca. Program sprawdzono
+na Macu M4 z 24 GB RAM i z przydziałem 16 GB dla Dockera. Model w kontenerze
+korzystał z procesora CPU.
+
+Po pobraniu sprawdź, czy aplikacja jest gotowa:
 
 ```sh
-docker compose ps -a
 curl http://localhost:8000/health/ready
 ```
 
-Odpowiedź `{"status":"ready"}` oznacza, że model jest pobrany i serwer SMTP
-odpowiada. Pierwsze zapytanie może potrwać około minuty, bo model musi jeszcze
-trafić do pamięci. Kolejne są zwykle szybsze. Postęp pobierania pokaże
-`docker compose logs -f model-init`. Zakończenie `model-init` kodem 0 jest prawidłowe.
+Odpowiedź `{"status":"ready"}` oznacza, że model jest pobrany, a serwer
+pocztowy odpowiada. Pierwsze zapytanie może potrwać około minuty, ponieważ
+model musi się jeszcze załadować do pamięci.
 
-- [Dokumentacja API i formularz zapytania](http://localhost:8000/api/v1/docs)
-- [Skrzynka testowa Mailpit](http://localhost:8025)
+Jeśli aplikacja jeszcze nie odpowiada, sprawdź postęp pobierania:
 
-## Przykład
+```sh
+docker compose logs -f model-init
+```
+
+Usługa `model-init` kończy pracę po pobraniu modelu. Kod zakończenia 0 oznacza,
+że pobieranie się udało.
+
+## Wyślij wiadomość
 
 ```sh
 curl http://localhost:8000/api/v1/route \
@@ -56,49 +61,51 @@ Przykładowa odpowiedź:
 }
 ```
 
-W Mailpit pojawi się wiadomość do kadr z oryginalną treścią i
-`Reply-To: ola@example.com`. `smtp_accepted` oznacza przyjęcie przez serwer
-pocztowy. Wiadomości nie są dostarczane do rzeczywistych osób.
+Otwórz [Mailpit](http://localhost:8025). Powinna tam być jedna wiadomość do
+`kadry@example.com`, z treścią zgłoszenia i `Reply-To: ola@example.com`.
+Status `smtp_accepted` oznacza, że serwer pocztowy przyjął mail. Mailpit
+zatrzymuje wiadomości u siebie — nie wysyła ich do rzeczywistych odbiorców.
 
-Jeśli masz lokalnego Pythona 3, możesz sprawdzić cały przepływ skryptem:
+Zapytanie możesz też wysłać z formularza w [dokumentacji API](http://localhost:8000/api/v1/docs).
+Jeśli masz Pythona 3, skrypt sprawdzi wysyłkę i zawartość przechwyconego maila:
 
 ```sh
 python3 scripts/check_delivery.py
 ```
 
-Skrypt wysyła jeden przykład i sprawdza odbiorcę, treść oraz `Reply-To` w Mailpit.
+Po błędzie nie ponawiaj wysyłki automatycznie. Serwer mógł już odebrać mail,
+nawet jeśli aplikacja nie dostała potwierdzenia. Kolejne zapytanie może wysłać
+wiadomość drugi raz.
 
-## Jak działa
+## Jak działa program
 
-1. FastAPI sprawdza adres i treść zgłoszenia.
-2. LangChain przekazuje modelowi reguły działów i schemat `send_email(recipient)`.
-3. Lokalny model Gemma4 12B wybiera odbiorcę przez wywołanie narzędzia.
-4. Kod sprawdza wywołanie i wysyła oryginalną wiadomość przez SMTP.
-5. API zwraca wynik; Mailpit pokazuje przechwycony e-mail.
+FastAPI sprawdza adres nadawcy i treść wiadomości. Następnie LangChain
+przekazuje modelowi reguły wyboru działu i opis funkcji `send_email(recipient)`.
+Model działa lokalnie w Ollamie. Zwraca wywołanie tej funkcji z wybranym adresem,
+a kod sprawdza argument i wysyła mail przez SMTP, czyli protokół pocztowy.
 
-Model może wybrać tylko jeden z pięciu adresów. Nie może zmienić treści,
-adresu nadawcy ani dodać kopii do innych osób. Reguły działów i decyzje
-techniczne opisuje [opis założeń](docs/design.md).
+Kod dopuszcza pięć adresów i jedną wysyłkę na zapytanie. Treść maila oraz
+`Reply-To` pobiera z zapytania, więc model nie ustala ich ponownie.
+[Podział działów, pliki programu i przyjęte ograniczenia](docs/design.md).
 
-## Obsługa i konfiguracja
+Domyślny model to `gemma4:12b-it-q4_K_M`. Aby zmienić model lub porty 8000
+i 8025, skopiuj `.env.example` do `.env` i zmień odpowiednie wartości.
+Inny model trzeba osobno sprawdzić na polskich wiadomościach i wywołaniach funkcji.
 
-Domyślny model: `gemma4:12b-it-q4_K_M`. Opcjonalny plik `.env`, utworzony
-na podstawie `.env.example`, pozwala zmienić model lub porty 8000 i 8025.
-Inny model wymaga osobnego sprawdzenia polskiego języka i wywoływania narzędzi.
+## Zatrzymanie i ponowny start
 
 ```sh
-docker compose logs --tail=100 api
 docker compose stop
 docker compose up -d
 ```
 
-Wagi pozostają w wolumenie między uruchomieniami. Mailpit domyślnie trzyma
-pocztę tylko do restartu procesu. Po zmianie kodu przebuduj API poleceniem
-`docker compose up -d --build`.
+Pobrany model zostaje na dysku. Wiadomości w Mailpit znikają po restarcie
+jego procesu. Po zmianie kodu użyj `docker compose up -d --build`.
+Logi aplikacji pokaże `docker compose logs --tail=100 api`.
 
-## Testy i wyniki
+## Testy
 
-Testy kodu uruchomisz lokalnie przy użyciu Python 3.12–3.14 i [uv](https://docs.astral.sh/uv/):
+Do uruchomienia testów na komputerze potrzebne są Python 3.12–3.14 i [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv sync --locked
@@ -106,15 +113,17 @@ uv run pytest -q tests
 uv run ruff check mail_agent tests scripts
 ```
 
-Testy sprawdzają walidację, wykonanie narzędzia, SMTP i monitoring. Model jest
-w nich zastępowany kontrolowaną odpowiedzią. Osobny test rzeczywistego modelu
-uzyskał **147/150 poprawnych przekazań** na syntetycznych polskich zgłoszeniach.
-Referencje przygotowało AI; wynik nie określa skuteczności na rzeczywistej poczcie.
-[Porównanie modeli i opis pomiaru](docs/model-comparison.md).
+Testy sprawdzają dane wejściowe, wywołanie funkcji, wysyłkę i monitoring.
+Zamiast pytać model, podstawiają przygotowane odpowiedzi, aby sprawdzić
+zachowanie kodu także przy błędach.
 
-To lokalny PoC: bez logowania użytkowników i obsługi ruchu produkcyjnego.
-Błędny wybór działu nadal jest możliwy. Po błędzie wysyłki nie ponawiaj
-zapytania automatycznie — serwer mógł już przyjąć mail. Każde osobne zapytanie
-może wysłać kolejną wiadomość.
+Osobno sprawdzono prawdziwy model: poprawnie przekazał **147 ze 150**
+przygotowanych wiadomości. Wiadomości i oczekiwanych odbiorców opracowało AI.
+[Opis testu, porównanie modeli i trzy pomyłki](docs/model-comparison.md).
 
-[Uruchomienie lokalnego monitoringu Langfuse](docs/monitoring.md).
+Program służy do lokalnych testów. Nie ma logowania użytkowników i nie był
+sprawdzany pod dużym obciążeniem. Wynik testu modelu nie określa skuteczności
+na rzeczywistej poczcie firmy.
+
+Opcjonalnie możesz włączyć [Langfuse](docs/monitoring.md), żeby zobaczyć kolejne
+etapy obsługi wiadomości, ich czas i błędy.

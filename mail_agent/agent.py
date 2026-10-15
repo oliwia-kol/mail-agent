@@ -32,7 +32,7 @@ def validate_call(response) -> dict:
 
 
 def encode_message(message: str) -> str:
-    # Kodujemy wyłącznie wejście modelu; do SMTP trafia zachowany oryginał.
+    # Kodowanie dotyczy tekstu dla modelu. Mail zachowuje oryginalną treść.
     return (
         json.dumps({"message": message}, ensure_ascii=False)
         .replace("<", "\\u003c")
@@ -46,7 +46,7 @@ def route(
     request_id: str,
     on_model_response: Callable[[AIMessage], None] | None = None,
 ) -> dict:
-    # Zamknięcie wiąże oryginał z jednym requestem; model nie ustala nagłówków ani treści.
+    # Funkcja korzysta z danych tego zapytania. Model podaje tylko odbiorcę.
     def send_email(recipient: str) -> dict:
         with observe(
             settings, "send_email", as_type="tool", input={"recipient": recipient}
@@ -93,7 +93,7 @@ def route(
                 HumanMessage(content=encode_message(request.message)),
             ]
         )
-        # Zapisujemy wywołanie narzędzia, bez tekstowej odpowiedzi i ukrytego rozumowania.
+        # W monitoringu zapisujemy wywołanie narzędzia i liczbę tokenów.
         span.update(
             output={
                 "tool_calls": response.tool_calls,

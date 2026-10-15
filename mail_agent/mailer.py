@@ -15,7 +15,7 @@ def deliver(settings: Settings, request: RouteRequest, recipient: str, request_i
     message["Message-ID"] = f"<{request_id}@mail-agent.example.com>"
     message["X-Request-ID"] = request_id
     message.set_content(request.message)
-    # Bez ponowień: po zerwaniu połączenia przyjęcie maila może być niejednoznaczne.
+    # Nie ponawiamy wysyłki: po zerwaniu połączenia mail może już być na serwerze.
     with smtplib.SMTP(
         settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout
     ) as smtp:

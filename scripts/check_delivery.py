@@ -1,4 +1,4 @@
-"""Sprawdza request z README i odpowiadającą mu wiadomość w lokalnym Mailpit."""
+"""Wysyła przykład z README i sprawdza odebrany mail w Mailpit."""
 
 import argparse
 import json
@@ -34,11 +34,11 @@ def main():
         method="POST",
     )
     start = monotonic()
-    # Request wysyłamy raz; ponawiamy wyłącznie odczyt przechwyconych maili.
+    # Wysyłamy raz. W razie potrzeby ponawiamy tylko sprawdzanie skrzynki.
     with urlopen(request, timeout=150) as response:
         result = json.load(response)
     if result.get("status") != "smtp_accepted":
-        raise SystemExit("API nie potwierdziło SMTP")
+        raise SystemExit("API nie potwierdziło przyjęcia maila przez serwer pocztowy")
     if result.get("recipient") != "kadry@example.com":
         raise SystemExit("Model wybrał nieprawidłowy dział")
     deadline = monotonic() + 10
@@ -53,7 +53,7 @@ def main():
                 matches.append(message)
         if matches:
             if len(matches) != 1:
-                raise SystemExit("Znaleziono więcej niż jeden mail dla requestu")
+                raise SystemExit("Jedno zapytanie utworzyło więcej niż jeden mail")
             message = matches[0]
             checks = {
                 "recipient": str(message["To"]) == result["recipient"],
@@ -77,7 +77,7 @@ def main():
                 raise SystemExit(1)
             return
         sleep(1)
-    raise SystemExit("Nie znaleziono maila w Mailpit; nie ponawiaj automatycznie requestu")
+    raise SystemExit("Nie znaleziono maila w Mailpit. Nie ponawiaj zapytania automatycznie.")
 
 
 if __name__ == "__main__":

@@ -30,9 +30,9 @@ def ready():
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=3) as smtp:
             code, _ = smtp.noop()
             if code != 250:
-                raise ValueError("SMTP nie potwierdziło gotowości")
+                raise ValueError("Serwer SMTP nie potwierdził gotowości")
     except Exception as exc:
-        raise HTTPException(503, "Model lub SMTP nie jest gotowy") from exc
+        raise HTTPException(503, "Model lub serwer pocztowy nie jest gotowy") from exc
     return {"status": "ready"}
 
 
@@ -60,12 +60,17 @@ def route_message(request: RouteRequest):
     except InvalidToolCall as exc:
         raise HTTPException(502, {"request_id": request_id, "error": str(exc)}) from exc
     except httpx.TimeoutException as exc:
-        raise HTTPException(504, {"request_id": request_id, "error": "Timeout modelu"}) from exc
+        raise HTTPException(
+            504, {"request_id": request_id, "error": "Model nie odpowiedział w wyznaczonym czasie"}
+        ) from exc
     except Exception as exc:
-        # Nie zwracamy surowego błędu usługi: może zawierać tekst lub nagłówki maila.
+        # Szczegóły błędu mogą zawierać treść maila, więc nie zwracamy ich w API.
         raise HTTPException(
             502,
-            {"request_id": request_id, "error": "Błąd modelu lub SMTP; nie ponawiaj automatycznie"},
+            {
+                "request_id": request_id,
+                "error": "Błąd modelu lub wysyłki. Nie ponawiaj zapytania automatycznie.",
+            },
         ) from exc
     finally:
         logger.info(

@@ -38,8 +38,8 @@ class Observation:
         if self.span is not None:
             try:
                 self.span.update(**values)
-            except Exception:  # noqa: BLE001 — błędy telemetrii nie mogą ponawiać wysyłki
-                logger.warning("Nie udało się uaktualnić śladu monitoringu")
+            except Exception:  # noqa: BLE001 — awaria monitoringu nie przerywa obsługi maila
+                logger.warning("Nie udało się uzupełnić zapisu w Langfuse")
 
 
 @contextmanager
@@ -53,9 +53,9 @@ def observe(settings: Settings, name: str, *, request_id=None, **values):
                 values["trace_context"] = {"trace_id": client.create_trace_id(seed=request_id)}
             context = client.start_as_current_observation(name=name, **values)
             observation = Observation(context.__enter__())
-        except Exception:  # noqa: BLE001 — błędy telemetrii nie mogą ponawiać wysyłki
+        except Exception:  # noqa: BLE001 — awaria monitoringu nie przerywa obsługi maila
             context = None
-            logger.warning("Monitoring niedostępny; obsługa zgłoszenia trwa dalej")
+            logger.warning("Langfuse jest niedostępny. Obsługa wiadomości trwa dalej.")
     try:
         yield observation
     except Exception as exc:
@@ -65,8 +65,8 @@ def observe(settings: Settings, name: str, *, request_id=None, **values):
         if context is not None:
             try:
                 context.__exit__(None, None, None)
-            except Exception:  # noqa: BLE001 — błędy telemetrii nie mogą ponawiać wysyłki
-                logger.warning("Nie udało się zakończyć śladu monitoringu")
+            except Exception:  # noqa: BLE001 — awaria monitoringu nie przerywa obsługi maila
+                logger.warning("Nie udało się zakończyć zapisu w Langfuse")
 
 
 def record_scores(settings: Settings, request_id: str, scores: dict):
@@ -81,5 +81,5 @@ def record_scores(settings: Settings, request_id: str, scores: dict):
                 value=int(value),
                 data_type="BOOLEAN",
             )
-    except Exception:  # noqa: BLE001 — błędy telemetrii nie mogą ponawiać wysyłki
-        logger.warning("Nie udało się zapisać wyników oceny w monitoringu")
+    except Exception:  # noqa: BLE001 — awaria monitoringu nie przerywa obsługi maila
+        logger.warning("Nie udało się zapisać wyników testu w Langfuse")

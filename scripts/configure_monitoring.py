@@ -1,4 +1,4 @@
-"""Tworzy lokalne dane dostępu Langfuse bez nadpisywania istniejącego pliku."""
+"""Tworzy plik z hasłami i kluczami do lokalnego Langfuse."""
 
 import os
 from pathlib import Path
@@ -20,7 +20,9 @@ values = {
 try:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 except FileExistsError:
-    raise SystemExit(".env.langfuse już istnieje; nie zmieniono danych dostępu") from None
+    raise SystemExit(
+        ".env.langfuse już istnieje. Zachowano dotychczasowe hasła i klucze."
+    ) from None
 with os.fdopen(descriptor, "w") as file:
     file.write("\n".join(f"{key}={value}" for key, value in values.items()) + "\n")
-print("Utworzono .env.langfuse; hasło lokalnego konta jest w LF_ADMIN_PASSWORD")
+print("Utworzono .env.langfuse. Hasło do panelu jest w polu LF_ADMIN_PASSWORD.")

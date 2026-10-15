@@ -20,7 +20,7 @@ class RouteRequest(BaseModel):
     @classmethod
     def nonblank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("Wiadomość nie może zawierać wyłącznie odstępów")
+            raise ValueError("Wpisz treść wiadomości. Same odstępy nie wystarczą.")
         return value
 
 

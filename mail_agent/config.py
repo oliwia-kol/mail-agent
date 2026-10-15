@@ -29,7 +29,7 @@ class Settings(BaseSettings):
                 "::1",
                 "langfuse-web",
             }:
-                raise ValueError("Monitoring PoC może wskazywać tylko lokalny Langfuse")
+                raise ValueError("Adres musi wskazywać lokalny serwer Langfuse")
             if not self.langfuse_public_key or not self.langfuse_secret_key.get_secret_value():
-                raise ValueError("Włączony Langfuse wymaga lokalnych kluczy projektu")
+                raise ValueError("Podaj klucze lokalnego projektu Langfuse, aby włączyć monitoring")
         return self
