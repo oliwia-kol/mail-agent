@@ -67,8 +67,8 @@ klasyfikacji i przekazania zgłoszenia.
 
 Kod dopuszcza wyłącznie nazwę `send_email`, argument `recipient` i adres
 z listy działów. Dodatkowe pola, niepoprawne argumenty oraz brak lub wiele
-wywołań blokują wysyłkę. Treść, nadawca i `Reply-To` pochodzą z danych
-zapytania. Model nie ustala CC i BCC ani nie ma dostępu do plików i terminala.
+wywołań blokują wysyłkę. Treść i `Reply-To` pochodzą z danych zapytania. Nagłówek `From`
+ma stałą wartość `router@example.com`. Model nie ustala CC i BCC ani nie ma dostępu do plików i terminala.
 
 Treść zgłoszenia jest niezaufanymi danymi. Kodowanie jej jako pola JSON
 oddziela ją od instrukcji, ale nie gwarantuje odporności na manipulacje.
