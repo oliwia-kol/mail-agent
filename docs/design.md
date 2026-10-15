@@ -1,126 +1,139 @@
-# Jak zbudowany jest program
+# Architektura i zasady routingu
 
-Program obsługuje wiadomości pracowników do wewnętrznych działów firmy.
-Jego zadaniem jest wybranie odbiorcy i przekazanie całej wiadomości.
-Prośba o zakup sprzętu pozostaje prośbą — wysłanie jej do IT nie zatwierdza zakupu.
+## Zakres
 
-## Który dział dostaje wiadomość
+System przekazuje wewnętrzne zgłoszenia pracowników do jednego działu.
+Model klasyfikuje treść i wskazuje odbiorcę przez wywołanie narzędzia.
+Przekazanie zgłoszenia nie stanowi zatwierdzenia zakupu ani zmiany uprawnień.
 
-| Adres | Sprawy |
+## Usługi
+
+| Usługa Compose | Odpowiedzialność |
 |---|---|
-| `human-resources@example.com` | Rekrutacja, szkolenia, rozwój, oceny pracy i relacje między pracownikami |
-| `kadry@example.com` | Urlopy, czas pracy, nadgodziny, płace, dokumenty zatrudnienia i dane pracowników |
-| `help-desk@example.com` | Naprawa i konfiguracja posiadanego sprzętu, problemy z aplikacjami, logowaniem i zwykłym dostępem |
+| `api` | FastAPI, walidacja, komunikacja z modelem przez LangChain, wykonanie narzędzia SMTP |
+| `ollama` | Lokalne uruchomienie modelu Gemma4 12B GGUF Q4_K_M |
+| `model-init` | Pobranie modelu przed startem API; proces kończy się po inicjalizacji |
+| `mailpit` | Przechwytywanie poczty i panel podglądu wiadomości |
+
+API korzysta z oficjalnego obrazu Pythona. Model i serwer pocztowy działają
+w osobnych kontenerach. Langfuse jest [opcjonalnym zestawem usług](monitoring.md).
+
+## Obsługa zapytania
+
+```mermaid
+sequenceDiagram
+    participant C as Klient HTTP
+    participant A as API / LangChain
+    participant O as Ollama
+    participant M as Mailpit
+    C->>A: POST /api/v1/route (email, message)
+    A->>A: Walidacja danych
+    A->>O: Instrukcja, treść i schemat send_email
+    O-->>A: Wywołanie send_email(recipient)
+    A->>A: Kontrola nazwy, argumentów i liczby wywołań
+    A->>M: SMTP: oryginalna treść i Reply-To
+    M-->>A: Potwierdzenie przyjęcia maila
+    A-->>C: request_id, recipient, smtp_accepted
+```
+
+Model wskazuje wywołanie; funkcję wykonuje aplikacja. Odpowiedź HTTP 200
+następuje po potwierdzeniu SMTP. Brak poprawnego wywołania lub błąd usługi
+przerywa obsługę z odpowiednim statusem błędu.
+
+## Zasady klasyfikacji
+
+| Odbiorca | Zakres spraw |
+|---|---|
+| `human-resources@example.com` | Rekrutacja, szkolenia, rozwój, oceny pracy i relacje pracownicze |
+| `kadry@example.com` | Urlopy, ewidencja czasu i nadgodzin, płace, dokumenty zatrudnienia i dane pracowników |
+| `help-desk@example.com` | Diagnoza i naprawa posiadanego sprzętu, konfiguracja aplikacji, logowanie i standardowy dostęp |
 | `it@example.com` | Przydział, wymiana i rozbudowa sprzętu, infrastruktura, wspólne usługi, kopie zapasowe i cyberbezpieczeństwo |
-| `other@example.com` | Pozostałe sprawy, wiadomości zbyt niejasne lub zawierające osobne prośby do różnych działów |
+| `other@example.com` | Sprawy poza zakresem, niejasne oraz niezależne prośby do różnych działów |
 
-Ten podział przyjęto na potrzeby projektu. W konkretnej firmie część obowiązków
-może być przypisana inaczej.
+Przypisanie zależy od celu prośby. Problem logowania do portalu urlopowego
+należy do help-desku, a rozliczenie urlopu do kadr. Awaria sprzętu wymagająca
+diagnozy należy do help-desku; jednoznaczny wniosek o przydział lub wymianę do IT.
 
-Liczy się to, o co prosi nadawca. Jeśli nie może zalogować się do portalu
-urlopowego, wiadomość trafia do help-desku. Jeśli chce rozliczyć urlop,
-trafia do kadr. „Laptop nie działa, może trzeba go wymienić” to prośba
-o diagnozę dla help-desku. „Proszę o przydział nowego laptopa” trafia do IT.
+Jedna wiadomość ma jednego odbiorcę. Kilka próśb do tego samego działu trafia
+do niego razem. Niezależne prośby do różnych działów są przekazywane w całości
+do `other@example.com`. Podział obowiązków jest założeniem projektu i wymaga
+dostosowania do organizacji przed użyciem rzeczywistej korespondencji.
 
-Jedna wiadomość ma jednego odbiorcę. Kilka próśb do tego samego działu może
-trafić do niego razem. Jeśli prośby dotyczą różnych działów, cała wiadomość
-trafia do `other@example.com`. Program nie dzieli jej na osobne maile.
+## Wykonanie narzędzia i bezpieczeństwo
 
-## Obsługa wiadomości
+Agent wykonuje jedno zapytanie do modelu, po którym może wykonać jedno
+`send_email(recipient)`. Dodatkowa pętla planowania nie jest potrzebna do
+klasyfikacji i przekazania zgłoszenia.
 
-1. FastAPI przyjmuje `email` i `message`, a następnie sprawdza ich poprawność.
-2. LangChain przekazuje do Ollamy instrukcję wyboru działu i opis funkcji wysyłki.
-3. Model zwraca wywołanie `send_email` z adresem odbiorcy.
-4. Kod sprawdza wywołanie, ustawia treść oraz nagłówki i łączy się z Mailpit przez SMTP.
-5. Po przyjęciu maila przez serwer API zwraca wynik.
+Kod dopuszcza wyłącznie nazwę `send_email`, argument `recipient` i adres
+z listy działów. Dodatkowe pola, niepoprawne argumenty oraz brak lub wiele
+wywołań blokują wysyłkę. Treść, nadawca i `Reply-To` pochodzą z danych
+zapytania. Model nie ustala CC i BCC ani nie ma dostępu do plików i terminala.
 
-Model jest pytany raz. Ma wybrać dział i wywołać funkcję, więc dodatkowa
-pętla planowania nie jest tu potrzebna. FastAPI udostępnia też dokumentację
-API, a Mailpit pozwala obejrzeć wynik wysyłki. Kontener aplikacji korzysta
-z oficjalnego obrazu Pythona.
+Treść zgłoszenia jest niezaufanymi danymi. Kodowanie jej jako pola JSON
+oddziela ją od instrukcji, ale nie gwarantuje odporności na manipulacje.
+Walidacja argumentów ogranicza dostępne działania; nie sprawdza poprawności
+merytorycznej wybranego działu.
 
-## Co znajduje się w plikach
+SMTP nie jest ponawiane po błędzie. Utrata potwierdzenia może nastąpić już
+po przyjęciu maila przez serwer. Osobne zapytania HTTP są obsługiwane niezależnie,
+również przy identycznej treści.
 
-| Plik | Zawartość |
+## Parametry i odpowiedzi
+
+| Parametr | Wartość |
 |---|---|
-| `mail_agent/api.py` | Obsługa zapytań HTTP, sprawdzanie gotowości i zwracanie błędów |
-| `mail_agent/contracts.py` | Wymagane pola zapytania, format odpowiedzi i lista odbiorców |
-| `mail_agent/agent.py` | Rozmowa z modelem oraz sprawdzenie i wykonanie jego wywołania |
-| `mail_agent/prompt.py` | Instrukcja, według której model wybiera dział |
-| `mail_agent/mailer.py` | Przygotowanie maila i wysyłka przez SMTP |
-| `mail_agent/config.py` | Odczyt ustawień ze zmiennych środowiskowych |
-| `mail_agent/observability.py` | Zapis przebiegu obsługi i wyników testów w Langfuse |
-
-## Co sprawdza kod
-
-Tekst wiadomości może zawierać polecenia skierowane do modelu, także próbę
-zmiany odbiorcy lub zasad. Dlatego aplikacja traktuje go jako dane do
-sklasyfikowania. Przekazuje go w polu JSON, a przed wysyłką sprawdza wynik:
-
-- wywołana funkcja musi nazywać się `send_email`;
-- musi wystąpić dokładnie jedno wywołanie;
-- jedynym argumentem jest `recipient`, z adresem z dozwolonej listy.
-
-Niepoprawne wywołanie zatrzymuje wysyłkę. Poprawny format nie daje jednak
-pewności, że model wybrał właściwy dział.
-
-Treść maila i `Reply-To` pochodzą z zapytania do API. Model nie ustawia
-kopii CC lub BCC i nie ma funkcji pozwalających czytać pliki czy wykonywać
-polecenia systemowe.
-
-Po błędzie SMTP kod nie próbuje wysyłać ponownie. Przerwane połączenie może
-oznaczać, że serwer przyjął mail, ale potwierdzenie nie dotarło do aplikacji.
-Osobne zapytania HTTP są obsługiwane osobno, również gdy mają tę samą treść.
-
-## Ustawienia i błędy
-
-| Ustawienie | Wartość |
-|---|---|
-| Długość wiadomości | 1–8000 znaków; same odstępy są odrzucane |
-| Czas oczekiwania w kliencie HTTP modelu | 120 s |
-| Czas oczekiwania na operację SMTP | 10 s |
-| Liczba wywołań funkcji wysyłki | Dokładnie jedno |
-| Model | Gemma4 12B GGUF Q4_K_M |
+| Treść wiadomości | 1–8000 znaków, z wykluczeniem samych odstępów |
+| Timeout klienta HTTP modelu | 120 s |
+| Timeout operacji SMTP | 10 s |
+| Kontekst modelu | 8192 tokeny |
+| Maksymalna odpowiedź | 512 tokenów |
 | Temperatura | 0 |
-| Długość kontekstu | 8192 tokeny |
-| Limit odpowiedzi modelu | 512 tokenów |
+| Instrukcja | `routing-v2-zero-shot`, bez przykładów i dodatkowego treningu |
 
-Tokeny to jednostki tekstu używane przez model. Limit 8000 znaków dotyczy
-pola `message`; nie określa wielkości całego zapytania ani nie gwarantuje,
-że dowolny tekst zmieści się w kontekście. Model korzysta z instrukcji bez
-przykładów. Nie był dodatkowo trenowany do tego projektu. Temperatura 0
-ogranicza losowość, ale nie zapewnia identycznych odpowiedzi we wszystkich
-wersjach środowiska.
+Limit znaków dotyczy pola `message`, nie całego żądania HTTP. Nie gwarantuje
+zmieszczenia dowolnego tekstu w kontekście modelu. Temperatura 0 ogranicza
+losowość, ale nie zapewnia identycznych wyników między wersjami środowiska.
 
-| Status HTTP | Znaczenie |
+| HTTP | Znaczenie |
 |---|---|
-| 200 | Serwer pocztowy przyjął wiadomość |
-| 422 | Dane wejściowe są niepoprawne |
-| 502 | Błąd modelu, wywołania funkcji lub wysyłki |
-| 504 | Przekroczony czas oczekiwania na model |
+| 200 | Przyjęcie wiadomości przez SMTP |
+| 422 | Niepoprawne dane wejściowe |
+| 502 | Błąd modelu, wywołania narzędzia lub SMTP |
+| 504 | Przekroczenie czasu oczekiwania na model |
 
-Kategoria `other` służy do przekazywania nierozpoznanych spraw.
-Awaria usługi kończy się błędem HTTP.
+`other` jest kategorią zgłoszenia. Awaria modelu lub SMTP nie jest zamieniana
+na tę kategorię.
 
-## Uruchomienie i przechowywanie danych
+## Uruchomienie i dane
 
-Compose uruchamia Ollamę, po czym `model-init` pobiera model. API startuje
-po zakończeniu pobierania. Endpoint `/health/ready` sprawdza, czy model jest
-dostępny i serwer SMTP odpowiada. Nie wykonuje zapytania do modelu, więc
-pierwsza odpowiedź może być wolniejsza przez ładowanie go do pamięci.
+API startuje po zakończeniu `model-init`. Endpoint `/health/ready` sprawdza
+obecność modelu i odpowiedź SMTP. Ładowanie modelu do pamięci następuje przy
+pierwszym zapytaniu.
 
-Pliki modelu zostają w wolumenie Dockera, czyli wydzielonym miejscu na dane
-kontenera. Poczta Mailpit domyślnie znika po restarcie jego procesu.
-Porty są udostępnione tylko na lokalnym komputerze, przez `localhost`.
-Internet jest potrzebny do pobrania modelu i obrazów; obsługa wiadomości
-odbywa się lokalnie.
+Wagi są przechowywane w trwałym wolumenie `model-data`. Mailpit domyślnie
+przechowuje pocztę do restartu procesu. Porty API i paneli są dostępne tylko
+przez `localhost`. Pobieranie obrazów i wag wymaga internetu; obsługa zgłoszeń
+korzysta z usług lokalnych.
 
-Langfuse można dołączyć osobno. Ma własne bazy, a klucze i hasła tworzy
-lokalny skrypt. Awaria Langfuse nie zatrzymuje wysyłki, ale zapis przebiegu
-obsługi może przepaść. [Instrukcja monitoringu](monitoring.md).
+## Moduły
 
-W [teście 150 wiadomości](model-comparison.md) wystąpiły trzy pomyłki wyboru
-działu. Dotyczyły wyposażenia biura i odebrania dostępów pracownikowi.
-Te granice trzeba ustalić dokładnie przy dopasowaniu programu do firmy.
-Program nie ma logowania użytkowników, ograniczenia liczby zapytań ani testu
-pracy pod dużym obciążeniem.
+| Plik | Odpowiedzialność |
+|---|---|
+| `mail_agent/api.py` | Endpointy HTTP, gotowość, odpowiedzi i błędy |
+| `mail_agent/contracts.py` | Schematy danych i lista odbiorców |
+| `mail_agent/agent.py` | Wywołanie modelu, walidacja i wykonanie narzędzia |
+| `mail_agent/prompt.py` | Instrukcja klasyfikacji |
+| `mail_agent/mailer.py` | Budowa wiadomości i SMTP |
+| `mail_agent/config.py` | Konfiguracja ze zmiennych środowiskowych |
+| `mail_agent/observability.py` | Monitoring i zapis wyników oceny |
+
+Warstwa HTTP, obsługa modelu i wysyłka są rozdzielone, aby można było testować
+je niezależnie. Zabezpieczenia wykonania znajdują się w kodzie, niezależnie
+od instrukcji modelu.
+
+## Ograniczenia
+
+PoC nie zawiera uwierzytelniania, limitowania ruchu ani deduplikacji zapytań.
+Nie przeprowadzono testu obciążeniowego. Znane błędy klasyfikacji i ograniczenia
+danych zawiera [raport oceny modeli](model-comparison.md).
