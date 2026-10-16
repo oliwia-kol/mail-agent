@@ -1,5 +1,13 @@
 # Mail Agent
 
+## English summary
+
+A local LLM agent that classifies employee messages and routes them to internal
+departments through validated tool calls. Built with FastAPI, LangChain and Ollama,
+with SMTP delivery to Mailpit, Docker Compose setup and optional Langfuse tracing.
+
+## Opis projektu
+
 Lokalny agent do routingu wewnętrznych zgłoszeń pracowników. API przyjmuje
 adres nadawcy i treść wiadomości. Model językowy wybiera dział i wywołuje
 narzędzie `send_email`, które przekazuje zgłoszenie do testowego serwera pocztowego.
